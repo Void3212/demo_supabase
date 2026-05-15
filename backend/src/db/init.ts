@@ -1,4 +1,7 @@
-﻿import { supabase } from '../supabaseClient.js';
+﻿import dotenv from 'dotenv';
+import { supabase } from '../supabaseClient.js';
+
+dotenv.config();
 
 const DEFAULT_ADMIN_SETTINGS = [
   { key: 'maintenanceMode', value: false },
@@ -52,11 +55,19 @@ const DEFAULT_RESERVATION_UNITS = [
   },
 ];
 
+const DEFAULT_ADMIN_USER = {
+  email: process.env.ADMIN_EMAIL || 'admin@demo.com',
+  password: process.env.ADMIN_PASSWORD || 'admin123',
+  name: 'Administrator',
+  role: 'admin' as const,
+};
+
 export async function initializeDatabase() {
   await testConnection();
   await initializeAdminSettings();
   await seedProducts();
   await seedReservationUnits();
+  await seedAdminUser();
 }
 
 async function testConnection() {
@@ -127,5 +138,38 @@ async function seedReservationUnits() {
   const { error: insertError } = await supabase.from('reservation_units').insert(insertPayload);
   if (insertError) {
     throw new Error(`Failed to seed reservation units: ${insertError.message}`);
+  }
+}
+
+async function seedAdminUser() {
+  const { data, error } = await supabase
+    .from('users')
+    .select('id')
+    .ilike('email', DEFAULT_ADMIN_USER.email)
+    .single();
+
+  if (error && error.code !== 'PGRST116') {
+    throw new Error(`Failed to query users for admin seed: ${error.message}`);
+  }
+
+  if (data) {
+    return;
+  }
+
+  const now = new Date().toISOString();
+  const { error: insertError } = await supabase.from('users').insert([
+    {
+      id: `user-${Date.now()}`,
+      email: DEFAULT_ADMIN_USER.email.toLowerCase(),
+      password: DEFAULT_ADMIN_USER.password,
+      name: DEFAULT_ADMIN_USER.name,
+      role: DEFAULT_ADMIN_USER.role,
+      created_at: now,
+      updated_at: now,
+    },
+  ]);
+
+  if (insertError) {
+    throw new Error(`Failed to seed admin user: ${insertError.message}`);
   }
 }

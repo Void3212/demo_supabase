@@ -183,6 +183,15 @@ backend/
 - `DATABASE_PATH` - SQLite database path (default: ./data/chillingan.db)
 - `NODE_ENV` - development or production
 - `FRONTEND_URL` - Frontend URL for CORS (default: http://localhost:5174)
+- `ADMIN_EMAIL` - Default admin login email for seeded admin user
+- `ADMIN_PASSWORD` - Default admin login password for seeded admin user
+
+## Supabase setup
+1. Open your Supabase project.
+2. Go to SQL Editor and run the script in `backend/supabase-schema.sql`.
+3. Make sure the tables are created successfully.
+4. Deploy the backend with `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `FRONTEND_URL`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD` configured.
+5. After importing schema, run `npm run db:init` locally or from your deployment environment to seed default settings, products, reservation units, and the admin user.
 
 ## Troubleshooting
 
