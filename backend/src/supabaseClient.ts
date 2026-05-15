@@ -1,11 +1,17 @@
 import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
-import ws from 'ws';
+import WS from 'ws';
 
 dotenv.config();
 
 const supabaseUrl = process.env.SUPABASE_URL || '';
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+
+class NodeWebSocket extends WS {
+  constructor(address: string | URL, protocols?: string | string[]) {
+    super(address.toString(), protocols as any);
+  }
+}
 
 export const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: {
@@ -13,7 +19,7 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
     autoRefreshToken: false,
   },
   realtime: {
-    transport: ws,
+    transport: NodeWebSocket as any,
   },
 });
 
