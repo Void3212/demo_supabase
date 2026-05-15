@@ -1,6 +1,6 @@
 import { type Product } from '../app/data/products';
 
-const defaultApiUrl = typeof window !== 'undefined' ? `http://${window.location.hostname}:3001/api` : 'http://localhost:3001/api';
+const defaultApiUrl = typeof window !== 'undefined' ? `http://${window.location.hostname}:3001/api` : 'https://demo-supabase-gisp.vercel.app/api';
 const API_URL = import.meta.env.VITE_API_URL || defaultApiUrl;
 
 export async function fetchAllProducts(): Promise<Product[]> {

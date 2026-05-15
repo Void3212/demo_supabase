@@ -23,7 +23,7 @@ The default configuration:
 - **PORT**: 3000
 - **DATABASE_PATH**: ./data/chillingan.db
 - **NODE_ENV**: development
-- **FRONTEND_URL**: http://localhost:5174
+- **FRONTEND_URL**: https://demo-supabase-theta.vercel.app
 
 ### 3. Initialize Database
 
@@ -182,7 +182,7 @@ backend/
 - `PORT` - Server port (default: 3000)
 - `DATABASE_PATH` - SQLite database path (default: ./data/chillingan.db)
 - `NODE_ENV` - development or production
-- `FRONTEND_URL` - Frontend URL for CORS (default: http://localhost:5174)
+- `FRONTEND_URL` - Frontend URL for CORS (default: https://demo-supabase-theta.vercel.app)
 - `ADMIN_EMAIL` - Default admin login email for seeded admin user
 - `ADMIN_PASSWORD` - Default admin login password for seeded admin user
 
