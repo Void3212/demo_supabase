@@ -1,5 +1,4 @@
-import { Database } from 'sqlite';
-import sqlite3 from 'sqlite3';
+﻿import { supabase } from '../supabaseClient.js';
 
 export interface ReservationUnit {
   id: string;
@@ -7,75 +6,114 @@ export interface ReservationUnit {
   name: string;
   description: string;
   imageUrl: string;
-  active: 0 | 1;
+  active: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
-export class ReservationUnitService {
-  constructor(private db: Database<sqlite3.Database, sqlite3.Statement>) {}
+function mapReservationUnit(row: any): ReservationUnit {
+  return {
+    id: row.id,
+    serviceId: row.service_id,
+    name: row.name,
+    description: row.description,
+    imageUrl: row.image_url,
+    active: Boolean(row.active),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
 
+export class ReservationUnitService {
   async createUnit(unit: Omit<ReservationUnit, 'createdAt' | 'updatedAt'>): Promise<ReservationUnit> {
     const now = new Date().toISOString();
-    await this.db.run(
-      `INSERT INTO reservation_units (id, serviceId, name, description, imageUrl, active, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        unit.id,
-        unit.serviceId,
-        unit.name,
-        unit.description,
-        unit.imageUrl,
-        unit.active,
-        now,
-        now,
-      ]
-    );
+    const { data, error } = await supabase
+      .from('reservation_units')
+      .insert([
+        {
+          id: unit.id,
+          service_id: unit.serviceId,
+          name: unit.name,
+          description: unit.description,
+          image_url: unit.imageUrl,
+          active: Boolean(unit.active),
+          created_at: now,
+          updated_at: now,
+        },
+      ])
+      .select()
+      .single();
 
-    return {
-      ...unit,
-      createdAt: now,
-      updatedAt: now,
-    };
+    if (error || !data) {
+      throw new Error(error?.message || 'Failed to create reservation unit');
+    }
+
+    return mapReservationUnit(data);
   }
 
   async getUnit(id: string): Promise<ReservationUnit | null> {
-    return (await this.db.get<ReservationUnit>(`SELECT * FROM reservation_units WHERE id = ?`, [id])) || null;
+    const { data, error } = await supabase.from('reservation_units').select().eq('id', id).single();
+    if (error && error.code !== 'PGRST116') {
+      throw new Error(error.message);
+    }
+    return data ? mapReservationUnit(data) : null;
   }
 
   async getAllUnits(): Promise<ReservationUnit[]> {
-    return this.db.all<ReservationUnit[]>(`SELECT * FROM reservation_units ORDER BY serviceId, name`);
+    const { data, error } = await supabase.from('reservation_units').select().order('service_id', { ascending: true }).order('name', { ascending: true });
+    if (error) {
+      throw new Error(error.message);
+    }
+    return (data || []).map(mapReservationUnit);
   }
 
   async getUnitsByService(serviceId: string): Promise<ReservationUnit[]> {
-    return this.db.all<ReservationUnit[]>(`SELECT * FROM reservation_units WHERE serviceId = ? AND active = 1 ORDER BY name`, [serviceId]);
+    const { data, error } = await supabase
+      .from('reservation_units')
+      .select()
+      .eq('service_id', serviceId)
+      .eq('active', true)
+      .order('name', { ascending: true });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+    return (data || []).map(mapReservationUnit);
   }
 
   async updateUnit(id: string, updates: Partial<Omit<ReservationUnit, 'id' | 'createdAt'>>): Promise<ReservationUnit | null> {
-    const fields: string[] = [];
-    const values: unknown[] = [];
+    const payload: any = {};
 
-    Object.entries(updates).forEach(([key, value]) => {
-      if (key === 'id' || key === 'createdAt') return;
-      fields.push(`${key} = ?`);
-      values.push(value);
-    });
+    if (updates.serviceId !== undefined) payload.service_id = updates.serviceId;
+    if (updates.name !== undefined) payload.name = updates.name;
+    if (updates.description !== undefined) payload.description = updates.description;
+    if (updates.imageUrl !== undefined) payload.image_url = updates.imageUrl;
+    if (updates.active !== undefined) payload.active = Boolean(updates.active);
 
-    if (fields.length === 0) {
+    if (Object.keys(payload).length === 0) {
       return this.getUnit(id);
     }
 
-    const now = new Date().toISOString();
-    fields.push('updatedAt = ?');
-    values.push(now);
-    values.push(id);
+    payload.updated_at = new Date().toISOString();
 
-    await this.db.run(`UPDATE reservation_units SET ${fields.join(', ')} WHERE id = ?`, values);
-    return this.getUnit(id);
+    const { data, error } = await supabase
+      .from('reservation_units')
+      .update(payload)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+    return data ? mapReservationUnit(data) : null;
   }
 
   async deleteUnit(id: string): Promise<boolean> {
-    const result = await this.db.run(`DELETE FROM reservation_units WHERE id = ?`, [id]);
-    return (result.changes ?? 0) > 0;
+    const { error, count } = await supabase.from('reservation_units').delete().eq('id', id).select();
+    if (error) {
+      throw new Error(error.message);
+    }
+    return count !== null ? count > 0 : true;
   }
 }

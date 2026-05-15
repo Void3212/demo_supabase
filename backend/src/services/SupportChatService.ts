@@ -1,5 +1,4 @@
-import { Database } from 'sqlite';
-import sqlite3 from 'sqlite3';
+﻿import { supabase } from '../supabaseClient.js';
 
 export type LiveChatRequestStatus = 'waiting' | 'connected' | 'closed';
 
@@ -12,72 +11,77 @@ export interface SupportChatRequest {
   updatedAt: number;
 }
 
+function mapChatRequest(row: any): SupportChatRequest {
+  return {
+    id: row.id,
+    status: row.status,
+    customerMessages: row.customer_messages ?? [],
+    adminMessages: row.admin_messages ?? [],
+    requestedAt: Number(row.requested_at),
+    updatedAt: Number(row.updated_at),
+  };
+}
+
 export class SupportChatService {
-  constructor(private db: Database<sqlite3.Database, sqlite3.Statement>) {}
-
-  private parseRow(row: any): SupportChatRequest {
-    return {
-      id: row.id,
-      status: row.status as LiveChatRequestStatus,
-      customerMessages: JSON.parse(row.customer_messages),
-      adminMessages: JSON.parse(row.admin_messages),
-      requestedAt: Number(row.requested_at),
-      updatedAt: Number(row.updated_at),
-    };
-  }
-
   async getRequests(): Promise<SupportChatRequest[]> {
-    const rows = await this.db.all<any>(`SELECT * FROM support_chat_requests ORDER BY updated_at DESC`);
-    return rows.map((row) => this.parseRow(row));
+    const { data, error } = await supabase.from('support_chat_requests').select().order('updated_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    return (data || []).map(mapChatRequest);
   }
 
   async getOpenRequest(): Promise<SupportChatRequest | null> {
-    const row = await this.db.get<any>(
-      `SELECT * FROM support_chat_requests WHERE status IN ('waiting','connected') ORDER BY updated_at DESC LIMIT 1`,
-    );
-    return row ? this.parseRow(row) : null;
+    const { data, error } = await supabase
+      .from('support_chat_requests')
+      .select()
+      .in('status', ['waiting', 'connected'])
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw new Error(error.message);
+    return data ? mapChatRequest(data) : null;
   }
 
   async getRequestById(id: string): Promise<SupportChatRequest | null> {
-    const row = await this.db.get<any>(`SELECT * FROM support_chat_requests WHERE id = ?`, id);
-    return row ? this.parseRow(row) : null;
+    const { data, error } = await supabase.from('support_chat_requests').select().eq('id', id).single();
+    if (error && error.code !== 'PGRST116') throw new Error(error.message);
+    return data ? mapChatRequest(data) : null;
   }
 
   async createRequest(request: SupportChatRequest): Promise<SupportChatRequest> {
-    await this.db.run(
-      `INSERT INTO support_chat_requests (id, status, customer_messages, admin_messages, requested_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      request.id,
-      request.status,
-      JSON.stringify(request.customerMessages),
-      JSON.stringify(request.adminMessages),
-      request.requestedAt,
-      request.updatedAt,
-    );
-    return request;
+    const { data, error } = await supabase
+      .from('support_chat_requests')
+      .insert([
+        {
+          id: request.id,
+          status: request.status,
+          customer_messages: request.customerMessages,
+          admin_messages: request.adminMessages,
+          requested_at: request.requestedAt,
+          updated_at: request.updatedAt,
+        },
+      ])
+      .select()
+      .single();
+
+    if (error || !data) throw new Error(error?.message || 'Failed to create support chat request');
+    return mapChatRequest(data);
   }
 
   async updateRequest(id: string, updates: Partial<Omit<SupportChatRequest, 'id'>>): Promise<SupportChatRequest | null> {
-    const request = await this.getRequestById(id);
-    if (!request) return null;
-    const nextRequest: SupportChatRequest = {
-      ...request,
-      ...updates,
-      customerMessages: updates.customerMessages ?? request.customerMessages,
-      adminMessages: updates.adminMessages ?? request.adminMessages,
-      updatedAt: updates.updatedAt ?? Date.now(),
-    };
+    const payload: any = {};
+    if (updates.status !== undefined) payload.status = updates.status;
+    if (updates.customerMessages !== undefined) payload.customer_messages = updates.customerMessages;
+    if (updates.adminMessages !== undefined) payload.admin_messages = updates.adminMessages;
+    if (updates.requestedAt !== undefined) payload.requested_at = updates.requestedAt;
+    if (updates.updatedAt !== undefined) payload.updated_at = updates.updatedAt;
 
-    await this.db.run(
-      `UPDATE support_chat_requests SET status = ?, customer_messages = ?, admin_messages = ?, requested_at = ?, updated_at = ? WHERE id = ?`,
-      nextRequest.status,
-      JSON.stringify(nextRequest.customerMessages),
-      JSON.stringify(nextRequest.adminMessages),
-      nextRequest.requestedAt,
-      nextRequest.updatedAt,
-      id,
-    );
+    if (Object.keys(payload).length === 0) {
+      return this.getRequestById(id);
+    }
 
-    return nextRequest;
+    const { data, error } = await supabase.from('support_chat_requests').update(payload).eq('id', id).select().single();
+    if (error) throw new Error(error.message);
+    return data ? mapChatRequest(data) : null;
   }
 }

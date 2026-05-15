@@ -1,5 +1,4 @@
-import { Database } from 'sqlite';
-import sqlite3 from 'sqlite3';
+﻿import { supabase } from '../supabaseClient.js';
 
 export interface WalkIn {
   id: string;
@@ -20,58 +19,69 @@ export interface WalkIn {
   updatedAt: string;
 }
 
-export class WalkInService {
-  constructor(private db: Database<sqlite3.Database, sqlite3.Statement>) {}
+function mapWalkIn(row: any): WalkIn {
+  return {
+    id: row.id,
+    date: row.date,
+    startTime: row.start_time,
+    endTime: row.end_time,
+    unitId: row.unit_id ?? undefined,
+    unitName: row.unit_name ?? undefined,
+    serviceId: row.service_id,
+    serviceName: row.service_name,
+    paymentAmount: Number(row.payment_amount),
+    amountReceived: Number(row.amount_received),
+    changeAmount: Number(row.change_amount),
+    paymentMethod: row.payment_method,
+    customerName: row.customer_name ?? undefined,
+    notes: row.notes ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
 
+export class WalkInService {
   async createWalkIn(walkIn: Omit<WalkIn, 'id' | 'createdAt' | 'updatedAt'>): Promise<WalkIn> {
     const id = `walkin-${Date.now()}`;
     const now = new Date().toISOString();
+    const { data, error } = await supabase
+      .from('walkins')
+      .insert([
+        {
+          id,
+          date: walkIn.date,
+          start_time: walkIn.startTime,
+          end_time: walkIn.endTime,
+          unit_id: walkIn.unitId ?? null,
+          unit_name: walkIn.unitName ?? null,
+          service_id: walkIn.serviceId,
+          service_name: walkIn.serviceName,
+          payment_amount: walkIn.paymentAmount,
+          amount_received: walkIn.amountReceived,
+          change_amount: walkIn.changeAmount,
+          payment_method: walkIn.paymentMethod,
+          customer_name: walkIn.customerName ?? null,
+          notes: walkIn.notes ?? null,
+          created_at: now,
+          updated_at: now,
+        },
+      ])
+      .select()
+      .single();
 
-    await this.db.run(
-      `INSERT INTO walkins (id, date, startTime, endTime, unitId, unitName, serviceId, serviceName, paymentAmount, amountReceived, changeAmount, paymentMethod, customerName, notes, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id,
-        walkIn.date,
-        walkIn.startTime,
-        walkIn.endTime,
-        walkIn.unitId ?? null,
-        walkIn.unitName ?? null,
-        walkIn.serviceId,
-        walkIn.serviceName,
-        walkIn.paymentAmount,
-        walkIn.amountReceived,
-        walkIn.changeAmount,
-        walkIn.paymentMethod,
-        walkIn.customerName ?? null,
-        walkIn.notes ?? null,
-        now,
-        now,
-      ]
-    );
-
-    return {
-      id,
-      ...walkIn,
-      createdAt: now,
-      updatedAt: now,
-    };
+    if (error || !data) throw new Error(error?.message || 'Failed to create walk-in');
+    return mapWalkIn(data);
   }
 
   async getAllWalkIns(): Promise<WalkIn[]> {
-    return this.db.all<WalkIn[]>('SELECT * FROM walkins ORDER BY date, startTime');
+    const { data, error } = await supabase.from('walkins').select().order('date', { ascending: true }).order('start_time', { ascending: true });
+    if (error) throw new Error(error.message);
+    return (data || []).map(mapWalkIn);
   }
 
   async deleteWalkIn(id: string): Promise<boolean> {
-    const result = await this.db.run('DELETE FROM walkins WHERE id = ?', [id]);
-    return (result.changes ?? 0) > 0;
-  }
-
-  async findOverlappingWalkIns(date: string, time: string): Promise<WalkIn[]> {
-    const slotHour = Number(time.split(':')[0]);
-    return this.db.all<WalkIn[]>(
-      `SELECT * FROM walkins WHERE date = ? AND ? >= CAST(substr(startTime, 1, instr(startTime, ':') - 1) AS INTEGER) AND ? < CAST(substr(endTime, 1, instr(endTime, ':') - 1) AS INTEGER)`,
-      [date, slotHour, slotHour]
-    );
+    const { error, count } = await supabase.from('walkins').delete().eq('id', id).select();
+    if (error) throw new Error(error.message);
+    return count !== null ? count > 0 : true;
   }
 }

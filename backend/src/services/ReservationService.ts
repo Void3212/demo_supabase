@@ -1,5 +1,4 @@
-import { Database } from 'sqlite';
-import sqlite3 from 'sqlite3';
+import { supabase } from '../supabaseClient.js';
 
 export interface Reservation {
   id: string;
@@ -17,148 +16,188 @@ export interface Reservation {
   updatedAt: string;
 }
 
-export interface User {
-  id: string;
-  email: string;
-  name: string;
-  phone?: string;
-  role: 'user' | 'admin';
-  createdAt: string;
-}
-
 export class ReservationService {
-  constructor(private db: Database<sqlite3.Database, sqlite3.Statement>) {}
+  private mapReservation(row: any): Reservation {
+    return {
+      id: row.id,
+      userId: row.user_id,
+      userName: row.users?.name ?? row.user_name ?? undefined,
+      date: row.date,
+      time: row.time,
+      partySize: Number(row.party_size),
+      unitId: row.unit_id ?? undefined,
+      unitName: row.unit_name ?? undefined,
+      serviceId: row.service_id ?? undefined,
+      specialRequests: row.special_requests ?? undefined,
+      status: row.status as Reservation['status'],
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
 
   private async ensureUserExists(userId: string): Promise<void> {
-    const existing = await this.db.get<{ id: string }>(
-      'SELECT id FROM users WHERE id = ?',
-      [userId]
-    );
+    const { data, error } = await supabase.from('users').select('id').eq('id', userId).single();
+    if (error && error.code !== 'PGRST116') {
+      throw new Error(error.message);
+    }
 
-    if (!existing) {
+    if (!data) {
       const now = new Date().toISOString();
-      const email = `${userId}@local.chillingan`; // keep unique for placeholder users
-      await this.db.run(
-        `INSERT INTO users (id, email, password, name, role, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [userId, email, 'local-user', 'Guest', 'customer', now, now]
-      );
+      const email = `${userId}@local.chillingan`;
+      const { error: insertError } = await supabase.from('users').insert([
+        {
+          id: userId,
+          email,
+          password: 'local-user',
+          name: 'Guest',
+          role: 'customer',
+          created_at: now,
+          updated_at: now,
+        },
+      ]);
+      if (insertError) {
+        throw new Error(insertError.message);
+      }
     }
   }
 
   async createReservation(reservation: Omit<Reservation, 'id' | 'createdAt' | 'updatedAt'>): Promise<Reservation> {
     await this.ensureUserExists(reservation.userId);
-
     const id = `res_${Date.now()}`;
     const now = new Date().toISOString();
 
-    await this.db.run(
-      `INSERT INTO reservations (id, userId, date, time, partySize, unitId, unitName, serviceId, specialRequests, status, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id,
-        reservation.userId,
-        reservation.date,
-        reservation.time,
-        reservation.partySize,
-        reservation.unitId || null,
-        reservation.unitName || null,
-        reservation.serviceId || null,
-        reservation.specialRequests || null,
-        'pending',
-        now,
-        now
-      ]
-    );
+    const { data, error } = await supabase
+      .from('reservations')
+      .insert([
+        {
+          id,
+          user_id: reservation.userId,
+          date: reservation.date,
+          time: reservation.time,
+          party_size: reservation.partySize,
+          unit_id: reservation.unitId ?? null,
+          unit_name: reservation.unitName ?? null,
+          service_id: reservation.serviceId ?? null,
+          special_requests: reservation.specialRequests ?? null,
+          status: 'pending',
+          created_at: now,
+          updated_at: now,
+        },
+      ])
+      .select('*, users(name)')
+      .single();
 
-    return {
-      id,
-      ...reservation,
-      status: 'pending',
-      createdAt: now,
-      updatedAt: now
-    };
+    if (error || !data) {
+      throw new Error(error?.message || 'Failed to create reservation');
+    }
+
+    return this.mapReservation(data);
   }
 
   async getReservation(id: string): Promise<Reservation | null> {
-    return (await this.db.get<Reservation>(
-      `SELECT * FROM reservations WHERE id = ?`,
-      [id],
-    )) || null;
+    const { data, error } = await supabase
+      .from('reservations')
+      .select('*, users(name)')
+      .eq('id', id)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') return null;
+      throw new Error(error.message);
+    }
+    return data ? this.mapReservation(data) : null;
   }
 
   async getUserReservations(userId: string): Promise<Reservation[]> {
-    return this.db.all<Reservation[]>(
-      `SELECT reservations.*, users.name AS userName
-       FROM reservations
-       LEFT JOIN users ON reservations.userId = users.id
-       WHERE userId = ?
-       ORDER BY date DESC, time DESC`,
-      [userId]
-    );
+    const { data, error } = await supabase
+      .from('reservations')
+      .select('*, users(name)')
+      .eq('user_id', userId)
+      .order('date', { ascending: false })
+      .order('time', { ascending: false });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+    return ((data || []) as any[]).map((row) => this.mapReservation(row));
   }
 
   async getAllReservations(): Promise<Reservation[]> {
-    return this.db.all<Reservation[]>(
-      `SELECT reservations.*, users.name AS userName
-       FROM reservations
-       LEFT JOIN users ON reservations.userId = users.id
-       ORDER BY date DESC, time DESC`
-    );
+    const { data, error } = await supabase
+      .from('reservations')
+      .select('*, users(name)')
+      .order('date', { ascending: false })
+      .order('time', { ascending: false });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+    return ((data || []) as any[]).map((row) => this.mapReservation(row));
   }
 
   async updateReservation(id: string, updates: Partial<Omit<Reservation, 'id' | 'createdAt'>>): Promise<Reservation | null> {
-    const now = new Date().toISOString();
-    const fields: string[] = [];
-    const values: unknown[] = [];
+    const payload: any = { ...updates };
+    if (payload.partySize !== undefined) payload.party_size = payload.partySize;
+    if (payload.userId !== undefined) payload.user_id = payload.userId;
+    if (payload.unitId !== undefined) payload.unit_id = payload.unitId;
+    if (payload.unitName !== undefined) payload.unit_name = payload.unitName;
+    if (payload.serviceId !== undefined) payload.service_id = payload.serviceId;
+    if (payload.specialRequests !== undefined) payload.special_requests = payload.specialRequests;
+    if (payload.userName !== undefined) delete payload.userName;
+    delete payload.id;
+    delete payload.createdAt;
 
-    Object.entries(updates).forEach(([key, value]) => {
-      if (key !== 'id' && key !== 'createdAt') {
-        fields.push(`${key} = ?`);
-        values.push(value);
-      }
-    });
+    payload.updated_at = new Date().toISOString();
 
-    fields.push('updatedAt = ?');
-    values.push(now);
-    values.push(id);
+    const { data, error } = await supabase
+      .from('reservations')
+      .update(payload)
+      .eq('id', id)
+      .select('*, users(name)')
+      .single();
 
-    if (fields.length <= 1) {
-      return this.getReservation(id);
+    if (error) {
+      throw new Error(error.message);
     }
-
-    await this.db.run(
-      `UPDATE reservations SET ${fields.join(', ')} WHERE id = ?`,
-      values
-    );
-
-    return this.getReservation(id);
+    return data ? this.mapReservation(data) : null;
   }
 
   async deleteReservation(id: string): Promise<boolean> {
-    const result = await this.db.run(
-      'DELETE FROM reservations WHERE id = ?',
-      [id]
-    );
-    return (result.changes ?? 0) > 0;
+    const { error, count } = await supabase.from('reservations').delete().eq('id', id).select();
+    if (error) {
+      throw new Error(error.message);
+    }
+    return count !== null ? count > 0 : true;
   }
 
   async getReservationsByDateRange(startDate: string, endDate: string): Promise<Reservation[]> {
-    return this.db.all<Reservation[]>(
-      'SELECT * FROM reservations WHERE date BETWEEN ? AND ? ORDER BY date, time',
-      [startDate, endDate]
-    );
+    const { data, error } = await supabase
+      .from('reservations')
+      .select('*, users(name)')
+      .gte('date', startDate)
+      .lte('date', endDate)
+      .order('date', { ascending: true })
+      .order('time', { ascending: true });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+    return ((data || []) as any[]).map((row) => this.mapReservation(row));
   }
 
   async checkAvailability(date: string, time: string, partySize: number): Promise<boolean> {
-    // Simple availability check - max 30 people per time slot
-    const result = await this.db.get<{ total: number }>(
-      `SELECT SUM(partySize) as total FROM reservations 
-       WHERE date = ? AND time = ? AND status != 'cancelled'`,
-      [date, time]
-    );
+    const { data, error } = await supabase
+      .from('reservations')
+      .select('party_size')
+      .eq('date', date)
+      .eq('time', time)
+      .neq('status', 'cancelled');
 
-    const currentPartySize = result?.total ?? 0;
-    return (currentPartySize + partySize) <= 30;
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const currentPartySize = (data || []).reduce((acc: number, row: any) => acc + Number(row.party_size), 0);
+    return currentPartySize + partySize <= 30;
   }
 }

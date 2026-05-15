@@ -1,5 +1,4 @@
-import { Database } from 'sqlite';
-import sqlite3 from 'sqlite3';
+import { supabase } from '../supabaseClient.js';
 
 export interface User {
   id: string;
@@ -14,15 +13,32 @@ export interface User {
   updatedAt: string;
 }
 
+function mapUser(row: any): User {
+  return {
+    id: row.id,
+    email: row.email,
+    password: row.password,
+    name: row.name,
+    phone: row.phone ?? undefined,
+    address: row.address ?? undefined,
+    profileImage: row.profile_image ?? undefined,
+    role: row.role,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 export class UserService {
-  constructor(private db: Database<sqlite3.Database, sqlite3.Statement>) {}
-
   async createUser(user: Omit<User, 'id' | 'createdAt' | 'updatedAt'>): Promise<User> {
-    const existing = await this.db.get<{ id: string }>(
-      'SELECT id FROM users WHERE email = ?',
-      [user.email.toLowerCase()]
-    );
+    const { data: existing, error: existsError } = await supabase
+      .from('users')
+      .select('id')
+      .ilike('email', user.email)
+      .single();
 
+    if (existsError && existsError.code !== 'PGRST116') {
+      throw new Error(existsError.message);
+    }
     if (existing) {
       throw new Error('An account with this email already exists.');
     }
@@ -30,36 +46,43 @@ export class UserService {
     const id = `user-${Date.now()}`;
     const now = new Date().toISOString();
 
-    await this.db.run(
-      `INSERT INTO users (id, email, password, name, phone, address, profileImage, role, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id,
-        user.email.toLowerCase(),
-        user.password,
-        user.name,
-        user.phone ?? null,
-        user.address ?? null,
-        user.profileImage ?? null,
-        user.role,
-        now,
-        now,
-      ]
-    );
+    const { data, error } = await supabase
+      .from('users')
+      .insert([
+        {
+          id,
+          email: user.email.toLowerCase(),
+          password: user.password,
+          name: user.name,
+          phone: user.phone ?? null,
+          address: user.address ?? null,
+          profile_image: user.profileImage ?? null,
+          role: user.role,
+          created_at: now,
+          updated_at: now,
+        },
+      ])
+      .select()
+      .single();
 
-    return {
-      id,
-      ...user,
-      createdAt: now,
-      updatedAt: now,
-    };
+    if (error || !data) {
+      throw new Error(error?.message || 'Failed to create user');
+    }
+
+    return mapUser(data);
   }
 
   async findByEmail(email: string): Promise<User | null> {
-    return (await this.db.get<User>(
-      'SELECT * FROM users WHERE LOWER(email) = LOWER(?)',
-      [email]
-    )) || null;
+    const { data, error } = await supabase
+      .from('users')
+      .select()
+      .ilike('email', email)
+      .single();
+
+    if (error && error.code !== 'PGRST116') {
+      throw new Error(error.message);
+    }
+    return data ? mapUser(data) : null;
   }
 
   async validateCredentials(email: string, password: string): Promise<User> {
@@ -71,15 +94,18 @@ export class UserService {
   }
 
   async getAllUsers(): Promise<User[]> {
-    return (await this.db.all<User[]>(
-      'SELECT * FROM users'
-    )) || [];
+    const { data, error } = await supabase.from('users').select();
+    if (error) {
+      throw new Error(error.message);
+    }
+    return (data || []).map(mapUser);
   }
 
   async getUserById(id: string): Promise<User | null> {
-    return (await this.db.get<User>(
-      'SELECT * FROM users WHERE id = ?',
-      [id]
-    )) || null;
+    const { data, error } = await supabase.from('users').select().eq('id', id).single();
+    if (error && error.code !== 'PGRST116') {
+      throw new Error(error.message);
+    }
+    return data ? mapUser(data) : null;
   }
 }

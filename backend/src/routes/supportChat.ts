@@ -1,11 +1,9 @@
 import { Router, Request, Response } from 'express';
-import { Database } from 'sqlite';
-import sqlite3 from 'sqlite3';
 import { SupportChatService } from '../services/SupportChatService.js';
 
-export function createSupportChatRoutes(db: Database<sqlite3.Database, sqlite3.Statement>) {
+export function createSupportChatRoutes() {
   const router = Router();
-  const supportChatService = new SupportChatService(db);
+  const supportChatService = new SupportChatService();
 
   router.get('/', async (req: Request, res: Response) => {
     try {

@@ -1,11 +1,9 @@
 import { Router, Request, Response } from 'express';
-import { Database } from 'sqlite';
-import sqlite3 from 'sqlite3';
 import { AdminSettingsService } from '../services/AdminSettingsService.js';
 
-export function createAdminSettingsRoutes(db: Database<sqlite3.Database, sqlite3.Statement>) {
+export function createAdminSettingsRoutes() {
   const router = Router();
-  const settingsService = new AdminSettingsService(db);
+  const settingsService = new AdminSettingsService();
 
   router.get('/', async (req: Request, res: Response) => {
     try {

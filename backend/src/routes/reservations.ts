@@ -1,13 +1,11 @@
 import { Router, Request, Response } from 'express';
-import { Database } from 'sqlite';
-import sqlite3 from 'sqlite3';
 import { ReservationService } from '../services/ReservationService.js';
 import { AdminSettingsService } from '../services/AdminSettingsService.js';
 
-export function createReservationRoutes(db: Database<sqlite3.Database, sqlite3.Statement>) {
+export function createReservationRoutes() {
   const router = Router();
-  const reservationService = new ReservationService(db);
-  const adminSettingsService = new AdminSettingsService(db);
+  const reservationService = new ReservationService();
+  const adminSettingsService = new AdminSettingsService();
 
   // Create a new reservation
   router.post('/', async (req: Request, res: Response) => {

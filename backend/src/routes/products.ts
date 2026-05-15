@@ -1,11 +1,9 @@
 import { Router, Request, Response } from 'express';
-import { Database } from 'sqlite';
-import sqlite3 from 'sqlite3';
 import { ProductService } from '../services/ProductService.js';
 
-export function createProductRoutes(db: Database<sqlite3.Database, sqlite3.Statement>) {
+export function createProductRoutes() {
   const router = Router();
-  const productService = new ProductService(db);
+  const productService = new ProductService();
 
   router.get('/', async (req: Request, res: Response) => {
     try {
@@ -48,7 +46,7 @@ export function createProductRoutes(db: Database<sqlite3.Database, sqlite3.State
         category,
         imageUrl,
         rating,
-        visible: visible === 0 ? 0 : 1,
+        visible: Boolean(visible),
       });
 
       res.status(201).json(product);

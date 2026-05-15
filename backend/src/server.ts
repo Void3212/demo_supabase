@@ -17,48 +17,41 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
-// Middleware
 app.use(express.json());
 app.use(cors({
   origin: FRONTEND_URL,
   credentials: true,
-  optionsSuccessStatus: 200
+  optionsSuccessStatus: 200,
 }));
 
-// Request logging
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.path}`);
   next();
 });
 
-// Initialize database and start server
 async function startServer() {
   try {
-    const db = await initializeDatabase();
-    console.log('✓ Database connected');
+    await initializeDatabase();
+    console.log('✓ Supabase connected');
 
-    // Register routes
-    app.use('/api/reservations', createReservationRoutes(db));
-    app.use('/api/products', createProductRoutes(db));
-    app.use('/api/reservation-units', createReservationUnitRoutes(db));
-    app.use('/api/admin-settings', createAdminSettingsRoutes(db));
-    app.use('/api/support-chat', createSupportChatRoutes(db));
-    app.use('/api/walkins', createWalkInRoutes(db));
-    app.use('/api/users', createUserRoutes(db));
+    app.use('/api/reservations', createReservationRoutes());
+    app.use('/api/products', createProductRoutes());
+    app.use('/api/reservation-units', createReservationUnitRoutes());
+    app.use('/api/admin-settings', createAdminSettingsRoutes());
+    app.use('/api/support-chat', createSupportChatRoutes());
+    app.use('/api/walkins', createWalkInRoutes());
+    app.use('/api/users', createUserRoutes());
     app.use('/api/orders', ordersRouter);
 
-    // Health check endpoint
-    app.get('/api/health', (req, res) => {
+    app.get('/api/health', (_req, res) => {
       res.json({ status: 'ok', timestamp: new Date().toISOString() });
     });
 
-    // 404 handler
-    app.use((req, res) => {
+    app.use((_req, res) => {
       res.status(404).json({ error: 'Route not found' });
     });
 
-    // Error handler
-    app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
       console.error('Unhandled error:', err);
       res.status(500).json({ error: 'Internal server error' });
     });

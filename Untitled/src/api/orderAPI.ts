@@ -1,6 +1,6 @@
 import type { Order, OrderStatus } from "../app/data/orders";
 
-const API_BASE = "http://localhost:3001";
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
 export const OrderAPI = {
   /**

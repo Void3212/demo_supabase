@@ -1,11 +1,9 @@
 import { Router, Request, Response } from 'express';
-import { Database } from 'sqlite';
-import sqlite3 from 'sqlite3';
 import { UserService } from '../services/UserService.js';
 
-export function createUserRoutes(db: Database<sqlite3.Database, sqlite3.Statement>) {
+export function createUserRoutes() {
   const router = Router();
-  const userService = new UserService(db);
+  const userService = new UserService();
 
   router.post('/register', async (req: Request, res: Response) => {
     try {

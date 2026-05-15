@@ -1,5 +1,4 @@
-import { Database } from 'sqlite';
-import sqlite3 from 'sqlite3';
+import { supabase } from '../supabaseClient.js';
 
 export interface Product {
   id: string;
@@ -9,73 +8,84 @@ export interface Product {
   category: string;
   imageUrl: string;
   rating: number;
-  visible: 0 | 1;
+  visible: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
-export class ProductService {
-  constructor(private db: Database<sqlite3.Database, sqlite3.Statement>) {}
+function mapProduct(row: any): Product {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    price: Number(row.price),
+    category: row.category,
+    imageUrl: row.image_url,
+    rating: Number(row.rating),
+    visible: Boolean(row.visible),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
 
+export class ProductService {
   async createProduct(product: Omit<Product, 'createdAt' | 'updatedAt'>): Promise<Product> {
     const now = new Date().toISOString();
-    await this.db.run(
-      `INSERT INTO products (id, name, description, price, category, imageUrl, rating, visible, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        product.id,
-        product.name,
-        product.description,
-        product.price,
-        product.category,
-        product.imageUrl,
-        product.rating,
-        product.visible,
-        now,
-        now,
-      ]
-    );
+    const { data, error } = await supabase
+      .from('products')
+      .insert([{ ...product, visible: Boolean(product.visible), created_at: now, updated_at: now }])
+      .select()
+      .single();
 
-    return {
-      ...product,
-      createdAt: now,
-      updatedAt: now,
-    };
+    if (error || !data) {
+      throw new Error(error?.message || 'Failed to create product');
+    }
+
+    return mapProduct(data);
   }
 
   async getProduct(id: string): Promise<Product | null> {
-    return (await this.db.get<Product>(`SELECT * FROM products WHERE id = ?`, [id])) || null;
+    const { data, error } = await supabase.from('products').select().eq('id', id).single();
+    if (error) {
+      if (error.code === 'PGRST116') return null;
+      throw new Error(error.message);
+    }
+    return data ? mapProduct(data) : null;
   }
 
   async getAllProducts(): Promise<Product[]> {
-    return this.db.all<Product[]>(`SELECT * FROM products ORDER BY name`);
+    const { data, error } = await supabase.from('products').select().order('name', { ascending: true });
+    if (error) {
+      throw new Error(error.message);
+    }
+    return (data || []).map(mapProduct);
   }
 
   async updateProduct(id: string, updates: Partial<Omit<Product, 'id' | 'createdAt'>>): Promise<Product | null> {
-    const fields: string[] = [];
-    const values: unknown[] = [];
-
-    Object.entries(updates).forEach(([key, value]) => {
-      if (key === 'id' || key === 'createdAt') return;
-      fields.push(`${key} = ?`);
-      values.push(value);
-    });
-
-    if (fields.length === 0) {
-      return this.getProduct(id);
+    const payload: any = { ...updates };
+    if (payload.visible !== undefined) {
+      payload.visible = Boolean(payload.visible);
     }
+    payload.updated_at = new Date().toISOString();
 
-    const now = new Date().toISOString();
-    fields.push('updatedAt = ?');
-    values.push(now);
-    values.push(id);
+    const { data, error } = await supabase
+      .from('products')
+      .update(payload)
+      .eq('id', id)
+      .select()
+      .single();
 
-    await this.db.run(`UPDATE products SET ${fields.join(', ')} WHERE id = ?`, values);
-    return this.getProduct(id);
+    if (error) {
+      throw new Error(error.message);
+    }
+    return data ? mapProduct(data) : null;
   }
 
   async deleteProduct(id: string): Promise<boolean> {
-    const result = await this.db.run(`DELETE FROM products WHERE id = ?`, [id]);
-    return (result.changes ?? 0) > 0;
+    const { error, count } = await supabase.from('products').delete().eq('id', id).select();
+    if (error) {
+      throw new Error(error.message);
+    }
+    return count !== null ? count > 0 : true;
   }
 }

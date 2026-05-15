@@ -1,11 +1,9 @@
 import { Router, Request, Response } from 'express';
-import { Database } from 'sqlite';
-import sqlite3 from 'sqlite3';
 import { WalkInService } from '../services/WalkInService.js';
 
-export function createWalkInRoutes(db: Database<sqlite3.Database, sqlite3.Statement>) {
+export function createWalkInRoutes() {
   const router = Router();
-  const walkInService = new WalkInService(db);
+  const walkInService = new WalkInService();
 
   router.post('/', async (req: Request, res: Response) => {
     try {

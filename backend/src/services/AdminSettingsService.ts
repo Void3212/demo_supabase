@@ -1,5 +1,4 @@
-import { Database } from 'sqlite';
-import sqlite3 from 'sqlite3';
+import { supabase } from '../supabaseClient.js';
 
 export interface AdminSettings {
   maintenanceMode: boolean;
@@ -22,51 +21,33 @@ const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
 };
 
 export class AdminSettingsService {
-  constructor(private db: Database<sqlite3.Database, sqlite3.Statement>) {}
-
   async getSettings(): Promise<AdminSettings> {
-    const rows = (await this.db.all<{ key: string; value: string }>(
-      'SELECT key, value FROM admin_settings',
-    )) as unknown as { key: string; value: string }[];
-
-    const settings: Record<string, any> = { ...DEFAULT_ADMIN_SETTINGS };
-    for (const row of (rows || [])) {
-      try {
-        settings[row.key] = JSON.parse(row.value);
-      } catch {
-        settings[row.key] = row.value;
-      }
+    const { data, error } = await supabase.from('admin_settings').select('key, value');
+    if (error) {
+      throw new Error(error.message);
     }
 
+    const settings: Record<string, any> = { ...DEFAULT_ADMIN_SETTINGS };
+    for (const row of data || []) {
+      settings[row.key] = row.value;
+    }
     return settings as AdminSettings;
   }
 
   async updateSettings(updates: Partial<AdminSettings>): Promise<AdminSettings> {
-    const insert = await this.db.prepare(
-      'INSERT INTO admin_settings(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
-    );
+    const entries = Object.entries(updates)
+      .filter(([, value]) => value !== undefined)
+      .map(([key, value]) => ({ key, value }));
 
-    for (const [key, value] of Object.entries(updates)) {
-      if (value === undefined) continue;
-      await insert.run(key, JSON.stringify(value));
+    if (entries.length === 0) {
+      return this.getSettings();
     }
 
-    await insert.finalize();
+    const { error } = await supabase.from('admin_settings').upsert(entries);
+    if (error) {
+      throw new Error(error.message);
+    }
+
     return this.getSettings();
-  }
-
-  async initializeDefaults(): Promise<void> {
-    const settings = await this.getSettings();
-    const insert = await this.db.prepare(
-      'INSERT OR IGNORE INTO admin_settings(key, value) VALUES (?, ?)',
-    );
-
-    for (const [key, value] of Object.entries(DEFAULT_ADMIN_SETTINGS)) {
-      if (settings[key as keyof AdminSettings] === undefined) {
-        await insert.run(key, JSON.stringify(value));
-      }
-    }
-
-    await insert.finalize();
   }
 }

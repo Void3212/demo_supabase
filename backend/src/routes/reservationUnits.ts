@@ -1,11 +1,9 @@
 import { Router, Request, Response } from 'express';
-import { Database } from 'sqlite';
-import sqlite3 from 'sqlite3';
 import { ReservationUnitService } from '../services/ReservationUnitService.js';
 
-export function createReservationUnitRoutes(db: Database<sqlite3.Database, sqlite3.Statement>) {
+export function createReservationUnitRoutes() {
   const router = Router();
-  const unitService = new ReservationUnitService(db);
+  const unitService = new ReservationUnitService();
 
   router.get('/', async (req: Request, res: Response) => {
     try {
@@ -56,7 +54,7 @@ export function createReservationUnitRoutes(db: Database<sqlite3.Database, sqlit
         name,
         description,
         imageUrl,
-        active: active === 0 ? 0 : 1,
+        active: Boolean(active),
       });
 
       res.status(201).json(unit);

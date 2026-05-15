@@ -1,11 +1,6 @@
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
+import { supabase } from '../supabaseClient.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-export type OrderStatus = "pending" | "accepted" | "rejected" | "shipped" | "delivered";
+export type OrderStatus = 'pending' | 'accepted' | 'rejected' | 'shipped' | 'delivered';
 
 export interface OrderItem {
   product: {
@@ -40,90 +35,123 @@ export interface Order {
   notes?: string;
 }
 
-const DATA_DIR = path.join(__dirname, "../../data");
-const DATA_FILE = path.join(DATA_DIR, "orders.json");
-
-// Ensure the data directory and file exist
-function ensureDataFile() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-  if (!fs.existsSync(DATA_FILE)) {
-    fs.writeFileSync(DATA_FILE, JSON.stringify([]));
-  }
-}
-
-function readOrders(): Order[] {
-  ensureDataFile();
-  try {
-    const data = fs.readFileSync(DATA_FILE, "utf-8");
-    return JSON.parse(data);
-  } catch {
-    return [];
-  }
-}
-
-function writeOrders(orders: Order[]): void {
-  ensureDataFile();
-  fs.writeFileSync(DATA_FILE, JSON.stringify(orders, null, 2));
+function mapOrder(row: any): Order {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    customerName: row.customer_name,
+    customerEmail: row.customer_email,
+    customerPhone: row.customer_phone ?? undefined,
+    items: row.items,
+    subtotal: Number(row.subtotal),
+    deliveryFee: Number(row.delivery_fee),
+    total: Number(row.total),
+    deliveryAddress: row.delivery_address,
+    status: row.status,
+    createdAt: row.created_at,
+    estimatedDeliveryTime: row.estimated_delivery_time,
+    acceptedAt: row.accepted_at ?? undefined,
+    shippedAt: row.shipped_at ?? undefined,
+    deliveredAt: row.delivered_at ?? undefined,
+    rejectionReason: row.rejection_reason ?? undefined,
+    notes: row.notes ?? undefined,
+  };
 }
 
 export const OrderService = {
-  createOrder(order: Order): Order {
-    const orders = readOrders();
-    orders.push(order);
-    writeOrders(orders);
-    return order;
+  async createOrder(order: Order): Promise<Order> {
+    const { data, error } = await supabase
+      .from('orders')
+      .insert([
+        {
+          ...order,
+          user_id: order.userId,
+          customer_name: order.customerName,
+          customer_email: order.customerEmail,
+          customer_phone: order.customerPhone || null,
+          delivery_fee: order.deliveryFee,
+          delivery_address: order.deliveryAddress,
+          estimated_delivery_time: order.estimatedDeliveryTime,
+          rejection_reason: order.rejectionReason || null,
+          created_at: order.createdAt,
+          updated_at: order.createdAt,
+        },
+      ])
+      .select()
+      .single();
+
+    if (error || !data) {
+      throw new Error(error?.message || 'Failed to create order');
+    }
+    return mapOrder(data);
   },
 
-  getOrders(): Order[] {
-    return readOrders().sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  async getOrders(): Promise<Order[]> {
+    const { data, error } = await supabase.from('orders').select().order('created_at', { ascending: false });
+    if (error) {
+      throw new Error(error.message);
+    }
+    return (data || []).map(mapOrder);
   },
 
-  getOrder(orderId: string): Order | null {
-    const orders = readOrders();
-    return orders.find((o) => o.id === orderId) || null;
+  async getOrder(orderId: string): Promise<Order | null> {
+    const { data, error } = await supabase.from('orders').select().eq('id', orderId).single();
+    if (error) {
+      throw new Error(error.message);
+    }
+    return data ? mapOrder(data) : null;
   },
 
-  getOrdersByUser(userId: string): Order[] {
-    const orders = readOrders();
-    return orders
-      .filter((o) => o.userId === userId)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  async getOrdersByUser(userId: string): Promise<Order[]> {
+    const { data, error } = await supabase
+      .from('orders')
+      .select()
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+    return (data || []).map(mapOrder);
   },
 
-  updateOrderStatus(orderId: string, status: OrderStatus, rejectionReason?: string): Order | null {
-    const orders = readOrders();
-    const index = orders.findIndex((o) => o.id === orderId);
+  async updateOrderStatus(orderId: string, status: OrderStatus, rejectionReason?: string): Promise<Order | null> {
+    const updatePayload: any = { status };
 
-    if (index === -1) return null;
-
-    const order = orders[index];
-    order.status = status;
-
-    if (status === "accepted") {
-      order.acceptedAt = new Date().toISOString();
-      delete order.rejectionReason;
-    } else if (status === "shipped") {
-      order.shippedAt = new Date().toISOString();
-    } else if (status === "delivered") {
-      order.deliveredAt = new Date().toISOString();
-    } else if (status === "rejected") {
-      order.rejectionReason = rejectionReason || "No reason provided";
+    if (status === 'accepted') {
+      updatePayload.accepted_at = new Date().toISOString();
+      updatePayload.rejection_reason = null;
+    }
+    if (status === 'shipped') {
+      updatePayload.shipped_at = new Date().toISOString();
+    }
+    if (status === 'delivered') {
+      updatePayload.delivered_at = new Date().toISOString();
+    }
+    if (status === 'rejected') {
+      updatePayload.rejection_reason = rejectionReason || 'No reason provided';
     }
 
-    orders[index] = order;
-    writeOrders(orders);
-    return order;
+    updatePayload.updated_at = new Date().toISOString();
+
+    const { data, error } = await supabase
+      .from('orders')
+      .update(updatePayload)
+      .eq('id', orderId)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+    return data ? mapOrder(data) : null;
   },
 
-  deleteOrder(orderId: string): boolean {
-    const orders = readOrders();
-    const filtered = orders.filter((o) => o.id !== orderId);
-
-    if (filtered.length === orders.length) return false;
-
-    writeOrders(filtered);
-    return true;
+  async deleteOrder(orderId: string): Promise<boolean> {
+    const { error, count } = await supabase.from('orders').delete().eq('id', orderId).select();
+    if (error) {
+      throw new Error(error.message);
+    }
+    return count !== null ? count > 0 : true;
   },
 };
