@@ -1,0 +1,4 @@
+old-origin	https://github.com/Void3212/demo.git (fetch)
+old-origin	https://github.com/Void3212/demo.git (push)
+origin	https://github.com/Void3212/demo_supabase.git (fetch)
+origin	https://github.com/Void3212/demo_supabase.git (push)

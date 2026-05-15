@@ -1,0 +1,5 @@
+a88032e asdasd
+fbf8423 Remove tracked Untitled/node_modules and add frontend .gitignore
+bd81fac Add vercel.json for frontend to fix permissions issue
+60c3c41 Simplify Vercel config - let Vercel auto-detect Node.js setup
+ac56f7b Fix Vercel deployment: remove env validation from import, add proper vercel.json
